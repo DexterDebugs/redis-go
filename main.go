@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"strings"
 )
 //-------------------------------------SERVER--------------------------------------------------
 func handleConnection(conn net.Conn){
@@ -18,9 +19,13 @@ func handleConnection(conn net.Conn){
 		}
 	
 		msg := string(buffer[:n])	//converts bytes into readable data
+		msg = strings.ToUpper(msg)
 		fmt.Println("Received: ", msg)
-
-		conn.Write(buffer[:n])	//echoes back to the client
+		if strings.Contains(msg, "PING"){
+			conn.Write([]byte("+PONG\r\n"))//echoes back to the client(to send to the client terminal)
+		}else{
+			conn.Write([]byte("-ERR unknown command"))
+		}
 	}
 }
 
