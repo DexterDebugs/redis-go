@@ -13,23 +13,25 @@ import (
 func handleConnection(conn net.Conn){
 	defer conn.Close()	//works after surrounding functions are executed
 
-	buffer := make([]byte, 1024)	//create a buffer of 1024 bytes
+	reader := bufio.NewReader(conn) 	//create a bufio wrapping conn
 
 	for {
-		n, err := conn.Read(buffer)		//Reads that data buffer 
+		cmd, err := readCommand(reader)		//parse one cmd
 		if err != nil{		//error found - disconnect immediately
 			fmt.Println("Client disconnected")
 			return	
 		}
-	
-		msg := string(buffer[:n])	//converts bytes into readable data
-		msg = strings.ToUpper(msg)
-		fmt.Println("Received: ", msg)
-		if strings.Contains(msg, "PING"){
-			conn.Write([]byte("+PONG\r\n"))//echoes back to the client(to send to the client terminal)
-		}else{
-			conn.Write([]byte("-ERR unknown command"))
+		if len(cmd) == 0{
+			continue
 		}
+		name := strings.ToUpper(cmd[0])
+		switch name {
+		case "PING":
+				conn.Write([]byte("+PONG\r\n"))
+		default:
+				conn.Write([]byte("-ERR unknown command\r\n"))
+		}
+		fmt.Println("Received command:", cmd)
 	}
 }
 
