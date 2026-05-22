@@ -54,6 +54,34 @@ func handleConnection(conn net.Conn){
 			}	else {
 				conn.Write([]byte("$-1\r\n"))
 			}
+		case "DEL":
+			if len(cmd) < 2{
+				conn.Write([]byte("-ERR wrong number of arguments\r\n"))
+				continue
+			}
+			mu.Lock()
+			_ , exists := store[cmd[1]]	//check if key exists
+			delete(store, cmd[1])
+			mu.Unlock()
+			if exists{
+				conn.Write([]byte(":1\r\n"))
+			}	else {
+				conn.Write([]byte(":0\r\n"))
+			}
+		case "EXISTS":
+			if len(cmd) < 2{
+				conn.Write([]byte("-ERR wrong number of arguments\r\n"))
+				continue
+			}
+			mu.Lock()
+			_, exists := store[cmd[1]]
+			mu.Unlock()
+			if exists{
+				conn.Write([]byte(":1\r\n"))
+			}	else {
+				conn.Write([]byte(":0\r\n"))
+			}
+
 		default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
 		}
