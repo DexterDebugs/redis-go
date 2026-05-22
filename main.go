@@ -3,11 +3,14 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
-	"io"
 	"strings"
+	"sync"
 )
+var store = map[string]string{}		//collection of key-value pairs
+var mu sync.Mutex
 
 //-------------------------------------SERVER--------------------------------------------------
 func handleConnection(conn net.Conn){
@@ -28,6 +31,29 @@ func handleConnection(conn net.Conn){
 		switch name {
 		case "PING":
 				conn.Write([]byte("+PONG\r\n"))
+		case "SET":
+			if len(cmd) < 3{
+				conn.Write([]byte("-ERR wrong number of arguments\r\n"))
+				continue
+			}
+			mu.Lock()
+			store[cmd[1]] = cmd[2]	//In the map called store, set the key "name" to have the value "Alex"
+			mu.Unlock()
+			conn.Write([]byte("+OK\r\n"))
+		case "GET":
+			if len(cmd) < 2{
+				conn.Write([]byte("-ERR wrong number of arguments\r\n"))
+				continue
+			}
+			mu.Lock()
+			value, exists := store[cmd[1]]
+			mu.Unlock()
+			if exists{
+				reply := fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
+				conn.Write([]byte(reply))
+			}	else {
+				conn.Write([]byte("$-1\r\n"))
+			}
 		default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
 		}
