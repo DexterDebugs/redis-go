@@ -8,8 +8,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 var store = map[string]string{}		//collection of key-value pairs
+var expiry = map[string]time.Time{}	//setting expiry time for each pair
 var mu sync.Mutex
 
 //-------------------------------------SERVER--------------------------------------------------
@@ -46,7 +48,8 @@ func handleConnection(conn net.Conn){
 				continue
 			}
 			mu.Lock()
-			value, exists := store[cmd[1]]
+			isExpired(cmd[1])		// clean up if expired (we hold the lock)
+			value, exists := store[cmd[1]]	// now check — expired key is already gone
 			mu.Unlock()
 			if exists{
 				reply := fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
@@ -81,12 +84,70 @@ func handleConnection(conn net.Conn){
 			}	else {
 				conn.Write([]byte(":0\r\n"))
 			}
-
+		case "EXPIRE":
+			if len(cmd) < 3{
+				conn.Write([]byte("-ERR wrong number of arguments\r\n"))
+				continue
+			}
+			secs, err := strconv.Atoi(cmd[2])
+			if err != nil {	
+				conn.Write([]byte("-ERR value is not an integer\r\n"))
+				continue	
+			}
+			mu.Lock()
+			_, exists := store[cmd[1]]
+			if exists{
+				expiry[cmd[1]] = time.Now().Add(time.Duration(secs) * time.Second)
+				//Debugging purpose:
+				//fmt.Println("DEBUG EXPIRE: key=", cmd[1], "secs=", secs, "expiry set to=", expiry[cmd[1]], "now=", time.Now())
+				//time.Duration(secs) * time.Second — turns the int secs into a duration (e.g. 60 * time.Second)
+				//time.Now().Add(d) — a moment d into the future
+			}
+			mu.Unlock()
+			if exists {
+				conn.Write([]byte(":1\r\n"))
+			} else {
+				conn.Write([]byte(":0\r\n"))
+			}
+		case "TTL":
+			if len(cmd) < 2{
+				conn.Write([]byte("-ERR wrong number of arguments\r\n"))
+				continue
+			}
+			mu.Lock()
+			isExpired(cmd[1])
+			_, exists := store[cmd[1]]
+			exp, hasExpiry := expiry[cmd[1]]
+			mu.Unlock()
+			if !exists {
+				conn.Write([]byte(":-2\r\n"))		//key doesn't exist
+			}	else if !hasExpiry{					//exists but never expires
+				conn.Write([]byte(":-1\r\n"))
+			}	else {
+				remaining := int(time.Until(exp).Seconds())
+				//time.Until(exp) — duration from now until exp;
+				//  .Seconds() gives a float, wrap in int(...) for whole seconds
+				reply := fmt.Sprintf(":%d\r\n", remaining)   // capture it
+ 				conn.Write([]byte(reply))			//send it
+			}
 		default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
 		}
 		fmt.Println("Received command:", cmd)
 	}
+}
+//----------------------------------------EXPIRATION FUNCTION------------------------------------------------------------
+func isExpired(key string) bool {
+	exp, hasExpiry := expiry[key]
+	if !hasExpiry	{
+		return false
+	}
+	if time.Now().After(exp){	//returns true if the current moment is later than the expiry time (i.e., the deadline has passed)
+		delete(store, key)
+		delete(expiry, key)
+		return true	// was expired, now deleted
+	}
+	return false	// has expiry, but not reached yet
 }
 
 //----------------------------------------PARSER FUNCTION---------------------------------------------------------
